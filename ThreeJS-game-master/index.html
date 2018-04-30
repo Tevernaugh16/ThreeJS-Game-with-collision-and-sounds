@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<title>Multiple Cameras (Three.js)</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<link rel=stylesheet href="css/base.css"/>
+</head>
+<body>
+
+<div id="Score" align="center" style="z-index:800; position: relative; font-size: 2.5em"></div>
+<div id="Life" align="center" style="z-index:800; position: relative; font-size: 2.5em"></div>
+
+<script src="js/Three.js"></script>
+<script src="js/Detector.js"></script>
+<script src="js/Stats.js"></script>
+<script src="js/OrbitControls.js"></script>
+<script src="js/THREEx.KeyboardState.js"></script>
+<script src="js/THREEx.FullScreen.js"></script>
+<script src="js/THREEx.WindowResize.js"></script>
+
+<!-- jQuery code to display an information button and box when clicked. -->
+<script src="js/jquery-1.9.1.js"></script>
+<script src="js/jquery-ui.js"></script>
+<link rel=stylesheet href="css/jquery-ui.css" />
+<link rel=stylesheet href="css/info.css"/>
+<script src="js/info.js"></script>
+<div id="infoButton"></div>
+<div id="infoBox" title="Demo Information">
+Gather the rotating red gears. <br/>
+Movement controls: <br/>
+<ul>
+<li>W/S: Rotate down/up
+<li>A/D: Rotate Left/Right
+<li>Space: Move Forward
+<li>R: Move Backward
+</ul>
+</div>
+<!---------------------------------------------------------------->
+
+<div id="ThreeJS" style="position: absolute; left:0px; top:0px"></div>
+<script>
+
+// MAIN
+
+// standard global variables
+var container, scene, renderer, controls, stats;
+var keyboard = new THREEx.KeyboardState();
+var clock = new THREE.Clock();
+
+// custom global variables
+var MovingCube, specialobj, chaseCamera;
+var hasControl = true;
+var collidableMeshList = [];
+var points = -1;
+var life = 10;
+var coin = new Audio('sounds/collectcoin.wav');
+var bump = new Audio('sounds/8-bit-bump.wav');
+var background = new Audio('sounds/Rays of Light (8-bit).mp3');
+init();
+animate();
+
+// FUNCTIONS 		
+function init() 
+{
+	// SCENE
+	scene = new THREE.Scene();
+	// CAMERA
+	var SCREEN_WIDTH = window.innerWidth, SCREEN_HEIGHT = window.innerHeight;
+	var VIEW_ANGLE = 45, ASPECT = SCREEN_WIDTH / SCREEN_HEIGHT, NEAR = 0.1, FAR = 20000;
+	// camera
+	chaseCamera = new THREE.PerspectiveCamera( VIEW_ANGLE, ASPECT, NEAR, FAR);
+	scene.add(chaseCamera);
+	// RENDERER
+	if ( Detector.webgl )
+		renderer = new THREE.WebGLRenderer( {antialias:true} );
+	else
+		renderer = new THREE.CanvasRenderer(); 
+	renderer.setSize(SCREEN_WIDTH, SCREEN_HEIGHT);
+	container = document.getElementById( 'ThreeJS' );
+	container.appendChild( renderer.domElement );
+	
+	// AUDIO DOESNT WORK
+	//var audioLoader = new THREE.AudioLoader();
+	//var listener = new THREE.AudioListener();
+	//chaseCamera.add( listener );
+	
+	// EVENTS
+	THREEx.WindowResize(renderer, chaseCamera);
+	THREEx.FullScreen.bindKey({ charCode : 'm'.charCodeAt(0) });
+	
+	// STATS
+	stats = new Stats();
+	stats.domElement.style.position = 'absolute';
+	stats.domElement.style.bottom = '0px';
+	stats.domElement.style.zIndex = 100;
+	container.appendChild( stats.domElement );
+	// LIGHT
+	var light = new THREE.PointLight(0xffffff);
+	//light.position.set(0,0,0);
+	
+	scene.add(light);
+	// SKYBOX/FOG
+	var skyBoxGeometry = new THREE.CubeGeometry( 850, 850, 850 );
+	var skyBoxMaterial = new THREE.MeshPhongMaterial( { color: 0xb0b0b0, side: THREE.BackSide } );
+	var skyBox = new THREE.Mesh( skyBoxGeometry, skyBoxMaterial );
+	scene.add(skyBox);
+	collidableMeshList.push(skyBox);
+	scene.fog = new THREE.FogExp2( 0x9999ff, 0.00025 );
+	
+	////////////
+	// CUSTOM //
+	////////////
+	var geometry = new THREE.SphereGeometry( 8, 8, 8 );
+	var material = new THREE.MeshLambertMaterial( {color: 0xffff00} );
+	MovingCube = new THREE.Mesh( geometry, material );
+	MovingCube.position.set(0, 25.1, 0);
+	scene.add( MovingCube );
+	/* DOESNT WORK
+	audioLoader.load( 'sounds/collectcoin.wav', function ( buffer ) {
+		var audio = new THREE.PositionalAudio( listener );
+		audio.setBuffer( buffer );
+		MovingCube.add(audio);
+		sounds.push(ball);
+	});
+	audioLoader.load( '8-bit-bump.aiff', function ( buffer ) {
+		var audio = new THREE.PositionalAudio( listener );
+		audio.setBuffer( buffer );
+		MovingCube.add(audio);
+		sounds.push(ball);
+	});
+	*/
+	// a little bit of scenery...
+
+	var ambientlight = new THREE.AmbientLight(0x111111);
+	scene.add( ambientlight );
+
+	var geometry = new THREE.TorusKnotGeometry( 13, 3, 64, 8, 20, 5 );
+	specialobj = new THREE.Mesh( geometry, new THREE.MeshPhongMaterial( { color: Math.random() * 0xffffff } ) );
+	specialobj.position.x = Math.random() * 800 - 400;
+	specialobj.position.y = Math.random() * 800 - 400;
+	specialobj.position.z = Math.random() * 800 - 400;
+	scene.add( specialobj );
+	specialobj.currentHex = specialobj.material.emissive.getHex();
+	specialobj.material.emissive.setHex( 0xff0000 );
+	
+	geometry = new THREE.CubeGeometry( 20, 20, 20, 1, 1, 1 );
+	for ( var i = 0; i < 400; i ++ ) {
+		object = new THREE.Mesh( geometry, new THREE.MeshPhongMaterial( { color: Math.random() * 0xffffff } ) );
+		object.position.x = Math.random() * 800 - 400;
+		object.position.y = Math.random() * 800 - 400;
+		object.position.z = Math.random() * 800 - 400;
+		object.rotation.x = Math.random() * 2 * Math.PI;
+		object.rotation.y = Math.random() * 2 * Math.PI;
+		object.rotation.z = Math.random() * 2 * Math.PI;
+		object.scale.x = Math.random() + 0.5;
+		object.scale.y = Math.random() + 0.5;
+		object.scale.z = Math.random() + 0.5;
+		scene.add( object );
+		collidableMeshList.push(object);
+	}
+	background.loop = true;
+	background.play();
+}
+
+function updateScore(){
+	document.getElementById("Score").innerHTML = "SCORE: " + points;  
+	if(life==0){
+		document.getElementById("Score").innerHTML = "GAME OVER";
+	}
+}
+function updateLife(){
+	document.getElementById("Life").innerHTML = "LIFE: " + life;   
+	if(life==0){
+		hasControl = false;
+		document.getElementById("Score").style.font.size = "5em";
+		document.getElementById("Life").innerHTML = "press R to replay";
+		
+	}
+}
+
+function checkObj(){
+	var originPoint = specialobj.position.clone();
+	for (var vertexIndex = 0; vertexIndex < specialobj.geometry.vertices.length; vertexIndex++)
+	{
+		var localVertex = specialobj.geometry.vertices[vertexIndex].clone();
+		var globalVertex = localVertex.applyMatrix4( specialobj.matrix );
+		var directionVector = globalVertex.sub( specialobj.position );
+		
+		var ray = new THREE.Raycaster( originPoint, directionVector.clone().normalize() );
+		var collisionResults = ray.intersectObjects( collidableMeshList );
+		if ( collisionResults.length > 0 && collisionResults[0].distance < directionVector.length() ) {
+			specialobj.position.x = Math.random() * 800 - 400;
+			specialobj.position.y = Math.random() * 800 - 400;
+			specialobj.position.z = Math.random() * 800 - 400;
+		}
+	}
+}
+
+function animate() 
+{
+	specialobj.rotation.x += 0.01;
+	specialobj.rotation.y += 0.08;
+    requestAnimationFrame( animate );
+	update();
+	checkObj();
+	updateScore();
+	updateLife();
+	renderer.render( scene, chaseCamera );
+}
+
+function update()
+{
+	var delta = clock.getDelta(); // seconds.
+	var moveDistance = 200 * delta; // 200 pixels per second
+	var rotateAngle = Math.PI / 2 * delta;   // pi/2 radians (90 degrees) per second
+	
+	// local transformations
+	// move forwards/backwards/left/right/up/down
+	if(hasControl){
+		if ( keyboard.pressed("W") )
+			MovingCube.rotateOnAxis( new THREE.Vector3(1,0,0), -rotateAngle);
+		if ( keyboard.pressed("S") )
+			MovingCube.rotateOnAxis( new THREE.Vector3(1,0,0), rotateAngle);
+		if ( keyboard.pressed("A") )
+			MovingCube.rotateOnAxis( new THREE.Vector3(0,1,0), rotateAngle);
+		if ( keyboard.pressed("D") )
+			MovingCube.rotateOnAxis( new THREE.Vector3(0,1,0), -rotateAngle);
+		if ( keyboard.pressed("R") )
+			MovingCube.translateZ(  moveDistance );
+		if ( keyboard.pressed(" ") )
+			MovingCube.translateZ(  -moveDistance );
+	}else{
+		if ( keyboard.pressed("R") ){
+			life = 10;
+			points = 0;
+			document.getElementById("Life").innerHTML = "LIFE: " + life;
+			document.getElementById("Score").innerHTML = "SCORE: " + points;
+			hasControl = true;
+		}
+	}
+	
+	chaseCamera.position.x = MovingCube.position.x;
+	chaseCamera.position.y = MovingCube.position.y;
+	chaseCamera.position.z = MovingCube.position.z;
+	chaseCamera.rotation.x = MovingCube.rotation.x;
+	chaseCamera.rotation.y = MovingCube.rotation.y;
+	chaseCamera.rotation.z = MovingCube.rotation.z;
+	chaseCamera.translateZ(100);
+	chaseCamera.translateY(10);
+
+	var originPoint = MovingCube.position.clone();
+	for (var vertexIndex = 0; vertexIndex < MovingCube.geometry.vertices.length; vertexIndex++)
+	{
+		var localVertex = MovingCube.geometry.vertices[vertexIndex].clone();
+		var globalVertex = localVertex.applyMatrix4( MovingCube.matrix );
+		var directionVector = globalVertex.sub( MovingCube.position );
+		
+		var ray = new THREE.Raycaster( originPoint, directionVector.clone().normalize() );
+		var collisionResults = ray.intersectObjects( collidableMeshList );
+		if ( collisionResults.length > 0 && collisionResults[0].distance < directionVector.length() ) {
+			life--;
+			bump.play();
+			MovingCube.position.x = 0;
+			MovingCube.position.y = 25.1;
+			MovingCube.position.z = 0;
+			break;
+		}
+		var collisionResults = ray.intersectObjects( [specialobj] );
+		if ( collisionResults.length > 0 && collisionResults[0].distance < directionVector.length() ) {
+			points++;
+			//var audio = MovingCube.children[ 0 ];
+			coin.play();
+			specialobj.position.x = Math.random() * 800 - 400;
+			specialobj.position.y = Math.random() * 800 - 400;
+			specialobj.position.z = Math.random() * 800 - 400;
+			specialobj.material.color.setHex = Math.random() * 0xffffff;
+			break;
+		}	
+
+	}
+	stats.update();
+}
+
+</script>
+
+</body>
+</html>
